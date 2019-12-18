@@ -70,7 +70,7 @@ class TsTickData(object):
 
 
 
-def makeup(spot_file: str, makeup_num) -> pd.DataFrame:
+def makeup(spot_file: str, makeup_num: int, today: str) -> pd.DataFrame:
     '''
     :param spot_file: 必须是“股份查询-股份组合-全部转成excel（去除千位符）”,即当日组合
     :param makeup_num: 补足到
@@ -101,7 +101,7 @@ def makeup(spot_file: str, makeup_num) -> pd.DataFrame:
     net_spot_sum = spot_df["实时持仓"].mul(spot_df["current_price"]).sum()
     print("现货持仓:", round(net_spot_sum / 1000000, 2), "百万")
 
-    df = makePortfolio(makeup_num, "20191127", hundred=False)
+    df = makePortfolio(makeup_num, today, hundred=False)
     df = pd.merge(spot_df, df, on="证券代码", how="outer")
     pd.set_option("display.max_rows", None)
     pd.set_option("display.max_columns", None)
@@ -130,4 +130,4 @@ def makeup(spot_file: str, makeup_num) -> pd.DataFrame:
 
 
 if __name__ == "__main__":
-    makeup(spot_file="current_pos.xlsx", makeup_num=120000000)
+    makeup(spot_file="position_1211.xlsx", makeup_num=200000000, today="20191211")

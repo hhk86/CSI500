@@ -98,10 +98,9 @@ def makePortfolio(fund, tradeDay, hundred=True) -> pd.DataFrame:
         df = df[["s_con_windcode", "accurate_shares"]]
     df.sort_values(by="s_con_windcode", inplace=True)
     df.columns = ["证券代码", "篮子数量"]
-    if hundred is True:
-        df.to_excel("portfolio.xls", index=False)
+    df.to_excel("portfolio.xls", index=False)
 
     return df
 
 if __name__ == "__main__":
-    print(makePortfolio(2000000, "20191127"))
+    print(makePortfolio(6000000, "20191218", hundred=True))
