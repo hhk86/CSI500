@@ -1,8 +1,9 @@
 import pandas as pd
 import sys
+import datetime as dt
 sys.path.append("D:\\Program Files\\Tinysoft\\Analyse.NET")
 import TSLPy3 as ts
-
+from makeCSI500Portfolio import *
 
 class TsTickData(object):
 
@@ -65,55 +66,73 @@ class TsTickData(object):
             raise Exception("Error when execute tsl")
 
 
-if __name__ == "__main__":
-    indexWeight = pd.read_excel('指数权重.xlsx', encoding="gbk", index=None)
-    portWeight = pd.read_excel('自有组合权重.xlsx', encoding="gbk",index=None)
-    # indexWeight["证券代码"] = indexWeight["证券代码"].apply(lambda s: s[:6])
-    portWeight["证券代码"] = portWeight["证券代码"].apply(lambda k : str(k).zfill(6))
-    portWeight["证券代码"] = portWeight["证券代码"].apply(lambda s: s + ".SH" if s.startswith('6') else s + ".SZ")
-
-    indexWeight = indexWeight.set_index('证券代码').squeeze()
-    portWeight = portWeight.set_index('证券代码').squeeze()
-    # indexWeight.to_csv("debug_indexWeight.csv", encoding="gbk")
-    # portWeight.to_csv("debug_portWeight.csv", encoding="gbk")
-
-    #  生成共同的index
+def adjust_weight(position_file: str, prev_date: str) -> None:
+    # Position file should be 股份查询-股份组合，存成xlsx并去除千位符
+    # Prev_date is the last trading day.
+    port = pd.read_excel(position_file, encoding="gbk", skiprows=range(0, 4), index_col=None)
+    port.index = list(range(port.shape[0]))
+    port.drop([port.shape[0] - 1], axis=0, inplace=True)
+    port = port[["证券代码", "证券名称", "股份余额"]]   # 股份余额是按昨日余额结转的，实时持仓是当前余额
+    port["证券代码"] = port["证券代码"].apply(lambda k: str(int(k)).zfill(6))
+    port["证券代码"] = port["证券代码"].apply(lambda s: "SH" + s if s.startswith('6') else "SZ" + s)
+    port = port[(port["证券代码"] != "SZ511880") & (port["证券代码"] != "SZ511990") \
+                          & (port["证券代码"] != "SZ511660") & (port["股份余额"] != 0)]  # Delete money fund and debts
+    index = makePortfolio(10000000, tradeDay=prev_date, hundred=False)
+    index["证券代码"] = index["证券代码"].apply(lambda s: s[-2:] + s[:6])
+    port = port.set_index('证券代码').squeeze()
+    index = index.set_index('证券代码').squeeze()
+    unionIndex = index.index.union(port.index)
+    unionPrice = pd.DataFrame()
+    with TsTickData() as tsl:
+        for tsl_ticker in list(unionIndex):
+            price = tsl.getHistoricalPrice(ticker=tsl_ticker, date=prev_date)
+            unionPrice = unionPrice.append([[tsl_ticker, price],])
+    unionPrice.columns = ["证券代码", "前收价格"]
+    port = pd.merge(port, unionPrice, left_index=True, right_on="证券代码")
+    index = pd.merge(index, unionPrice, left_index=True, right_on="证券代码")
+    port["持仓金额"] = port["股份余额"].mul(port["前收价格"])
+    port_sum = port["持仓金额"].sum()
+    port["权重"] = port["持仓金额"] / port_sum
+    index["篮子金额"] = index["篮子数量"].mul(index["前收价格"])
+    index_sum = index["篮子金额"].sum()
+    index["权重"] = index["篮子金额"] / index_sum
+    portWeight = port[["证券代码", "权重"]].set_index('证券代码').squeeze()
+    indexWeight = index[["证券代码", "权重"]].set_index('证券代码').squeeze()
     unionIndex = indexWeight.index.union(portWeight.index)
-
     indexWeight = indexWeight.reindex(unionIndex, fill_value = 0.)
     portWeight = portWeight.reindex(unionIndex, fill_value = 0.)
-
-
+    indexWeight.to_csv("debug.csv", encoding="gbk")
+    portWeight.to_csv("debug2.csv", encoding="gbk")
     diffWeight = indexWeight - portWeight
-    diffWeight.to_csv("debug.csv", encoding="gbk")
-    value = diffWeight * 117034413.67
+    value = diffWeight * port_sum
     portfolio = pd.DataFrame(value)
     portfolio.reset_index(inplace=True)
-    portfolio["价格"] = None
-    i = 0
-    with TsTickData() as tsl:
-        for i in range(portfolio.shape[0]):
-            tsl_ticker = portfolio.iloc[i,0]
-            tsl_ticker = "SH" + tsl_ticker[:6] if tsl_ticker.startswith('6') else "SZ" + tsl_ticker[:6]
-            portfolio.iloc[i, 2] = tsl.getHistoricalPrice(ticker=tsl_ticker, date="201912123")
-            i += 1
-            print(i)
-    portfolio.to_csv("debug.csv", encoding="gbk", index=None)
-    portfolio = portfolio[portfolio["权重"] != 0]
-    portfolio["篮子数量"] = portfolio["权重"].div(portfolio["价格"]).apply(lambda x: round(x, -2)).astype(int)
-    portfolio["篮子数量"] = portfolio["权重"].div(portfolio["价格"])
+    portfolio.columns = ["证券代码", "篮子金额"]
+    portfolio = pd.merge(portfolio, unionPrice, on="证券代码")
+    portfolio["篮子数量"] = portfolio["篮子金额"].div(portfolio["前收价格"])
+    portfolio["证券代码"] = portfolio["证券代码"].apply(lambda s: s[3:] + '.' + s[:2])
     portfolio_buy = portfolio[portfolio["篮子数量"] > 0]
     portfolio_sell = portfolio[portfolio["篮子数量"] < 0]
-    pos_sum = portfolio_buy["权重"].sum()
-    neg_sum = portfolio_sell["权重"].sum()
-    print(pos_sum, neg_sum, pos_sum + neg_sum)
+    pos_sum = portfolio_buy["篮子金额"].sum()
+    neg_sum = portfolio_sell["篮子金额"].sum()
+    print("买入", round(pos_sum / 10000, 2), "万， 卖出", round(neg_sum / 10000, 2), "万")
+    numOfPortfolio = int(input("请输入要分成的篮子数量："))
     portfolio_buy = portfolio_buy[["证券代码", "篮子数量"]]
     portfolio_sell = portfolio_sell[["证券代码", "篮子数量"]]
-    portfolio_buy["篮子数量"] = portfolio_buy["篮子数量"].apply(lambda x: round(x / 3, -2)).astype(int)
-    portfolio_sell["篮子数量"] = portfolio_sell["篮子数量"].apply(lambda x: round(x / 3, -2)).astype(int)
+    portfolio_buy["篮子数量"] = portfolio_buy["篮子数量"].apply(lambda x: round(x / numOfPortfolio, -2)).astype(int)
+    portfolio_sell["篮子数量"] = portfolio_sell["篮子数量"].apply(lambda x: round(x / numOfPortfolio, -2)).astype(int)
     portfolio_buy = portfolio_buy[portfolio_buy["篮子数量"] > 0]
     portfolio_sell = portfolio_sell[portfolio_sell["篮子数量"] < 0]
     portfolio_sell["篮子数量"] = - portfolio_sell["篮子数量"]
     portfolio_buy.to_excel("portfolio_buy.xls", encoding="gbk", index=None)
     portfolio_sell.to_excel("portfolio_sell.xls", encoding="gbk", index=None)
-    print(portfolio)
+    print(portfolio_buy)
+    print(portfolio_sell)
+
+
+
+
+
+if __name__ == "__main__":
+    adjust_weight("position_1224.xlsx", prev_date="20191223")
+
