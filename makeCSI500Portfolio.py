@@ -103,4 +103,4 @@ def makePortfolio(fund, tradeDay, hundred=True) -> pd.DataFrame:
     return df
 
 if __name__ == "__main__":
-    print(makePortfolio(6000000, "20191218", hundred=True))
+    print(makePortfolio(6000000, "20191218", hundred=False))

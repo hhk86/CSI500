@@ -130,4 +130,4 @@ def makeup(spot_file: str, makeup_num: int, today: str) -> pd.DataFrame:
 
 
 if __name__ == "__main__":
-    makeup(spot_file="position_1211.xlsx", makeup_num=200000000, today="20191211")
+    makeup(spot_file="position_1224.xlsx", makeup_num=110000000, today="20191224")
